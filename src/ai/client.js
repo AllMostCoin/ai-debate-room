@@ -1,25 +1,42 @@
 import { ollamaClient } from './ollama.js';
+import { groqClient } from './groq.js';
 import { speechSynth } from './speech.js';
 
 const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || '';
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || '';
+const USE_GROQ = import.meta.env.VITE_USE_GROQ === 'true';
 const USE_CLOUD = import.meta.env.VITE_USE_CLOUD === 'true';
 
 class AIClient {
   constructor() {
     this.ollama = ollamaClient;
-    this.cloudEnabled = USE_CLOUD && OPENAI_API_KEY;
-    this.currentProvider = USE_CLOUD ? 'openai' : 'ollama';
+    this.groq = groqClient;
+    this.cloudEnabled = (USE_CLOUD && OPENAI_API_KEY) || (USE_GROQ && GROQ_API_KEY);
+    this.useGroq = USE_GROQ && GROQ_API_KEY;
+    this.useOpenAI = USE_CLOUD && OPENAI_API_KEY && !this.useGroq;
+    this.currentProvider = this.useGroq ? 'groq' : (this.useOpenAI ? 'openai' : 'ollama');
   }
 
   async checkConnection() {
-    if (this.cloudEnabled) {
+    if (this.useGroq) {
+      return { connected: true, provider: 'groq', models: ['llama-3.1-8b-instant', 'llama-3.2-3b-preview', 'mixtral-8x7b-32768', 'gemma2-9b-it'] };
+    }
+    if (this.useOpenAI) {
       return { connected: true, provider: 'openai', models: ['gpt-4o-mini', 'gpt-4o', 'gpt-3.5-turbo'] };
     }
     return await this.ollama.checkConnection();
   }
 
   async listModels() {
-    if (this.cloudEnabled) {
+    if (this.useGroq) {
+      return [
+        { name: 'llama-3.1-8b-instant', description: 'Fast, free, accurate' },
+        { name: 'llama-3.2-3b-preview', description: 'Compact, efficient' },
+        { name: 'mixtral-8x7b-32768', description: 'Large, powerful' },
+        { name: 'gemma2-9b-it', description: 'Google\'s model' }
+      ];
+    }
+    if (this.useOpenAI) {
       return [
         { name: 'gpt-4o-mini', description: 'Fast, affordable' },
         { name: 'gpt-4o', description: 'Most capable' },
@@ -30,7 +47,10 @@ class AIClient {
   }
 
   async chat(model, messages, options = {}) {
-    if (this.cloudEnabled) {
+    if (this.useGroq) {
+      return await this.groq.chat(model, messages, options);
+    }
+    if (this.useOpenAI) {
       return await this.chatOpenAI(model, messages, options);
     }
     return await this.ollama.chat(model, messages, options);
