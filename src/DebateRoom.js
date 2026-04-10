@@ -2,6 +2,18 @@ import * as THREE from 'three';
 import { Room } from './3d/Room.js';
 import { AIModel3D } from './3d/AIModel3D.js';
 
+const CHARACTERS = {
+  'gpt-4': { name: 'Cloud', emoji: '⚔️', description: 'GPT-4.1 - The Hero' },
+  'claude': { name: 'Barret', emoji: '🔫', description: 'Claude Sonnet - The Tank' },
+  'gemini': { name: 'Red XIII', emoji: '🔥', description: 'Gemini 2.5 - The Speedster' },
+  'mistral': { name: 'Cid', emoji: '🦞', description: 'Mistral - The Mechanic' },
+  'llama3': { name: 'Tifa', emoji: '👊', description: 'Llama 3 - The Brawler' },
+  'codellama': { name: 'Vincent', emoji: '🦇', description: 'Code Llama - The Dark' },
+  'copilot': { name: 'Sephiroth', emoji: '👑', description: 'GitHub Copilot - The Nemesis' },
+  'grok': { name: 'Yuffie', emoji: '🌊', description: 'Grok 3 - The Ninja' },
+  'ollama': { name: 'Nanaki', emoji: '🌙', description: 'Ollama - The Guardian' }
+};
+
 class DebateRoom {
   constructor() {
     this.scene = null;
@@ -12,6 +24,10 @@ class DebateRoom {
     this.raycaster = new THREE.Raycaster();
     this.mouse = new THREE.Vector2();
     this.selectedModel = null;
+    this.fightState = 'idle';
+    this.currentRound = 1;
+    this.responses = {};
+    this.winner = null;
     
     this.init();
   }
@@ -25,6 +41,8 @@ class DebateRoom {
     
     this.room = new Room(this.scene);
     this.addDefaultModels();
+    
+    this.startFightSequence();
     
     window.addEventListener('resize', () => this.onResize());
     document.addEventListener('click', (e) => this.onClick(e));
@@ -65,6 +83,9 @@ class DebateRoom {
     const bottomLight3 = new THREE.PointLight(0x00ffff, 0.5, 15);
     bottomLight3.position.set(5, 0.5, -5);
     this.scene.add(bottomLight3);
+    
+    this.mainLight = mainLight;
+    this.accentLights = [accentLight1, accentLight2, bottomLight1, bottomLight2, bottomLight3];
   }
   
   setupCamera() {
@@ -112,7 +133,6 @@ class DebateRoom {
       pos.z = z;
       
       pos.y = Math.max(3, Math.min(20, pos.y - phi));
-      
       this.previousMousePosition = { x: e.clientX, y: e.clientY };
     });
     
@@ -130,7 +150,7 @@ class DebateRoom {
       
       if (newDistance > 8 && newDistance < 50) {
         this.camera.position.multiplyScalar(newDistance / distance);
-      this.camera.position.y = Math.max(3, Math.min(20, this.camera.position.y));
+        this.camera.position.y = Math.max(3, Math.min(20, this.camera.position.y));
       }
     });
   }
@@ -138,19 +158,27 @@ class DebateRoom {
   addDefaultModels() {
     const useGroq = import.meta.env.VITE_USE_GROQ === 'true';
     if (useGroq) {
-      this.addModel('llama-3.1-8b-instant', 'Llama 3.1', new THREE.Vector3(-6, 0, 0));
-      this.addModel('llama-3.3-70b-versatile', 'Llama 3.3', new THREE.Vector3(-2, 0, 0));
-      this.addModel('llama-3.1-8b-instant', 'Llama 3.1b', new THREE.Vector3(2, 0, 0));
+      this.addModel('gpt-4', 'GPT-4.1', new THREE.Vector3(-6, 0, 0));
+      this.addModel('claude', 'Claude Sonnet', new THREE.Vector3(-2, 0, 0));
+      this.addModel('gemini', 'Gemini 2.5', new THREE.Vector3(2, 0, 0));
     } else {
-      this.addModel('llama3', 'Llama 3', new THREE.Vector3(-5, 0, 0));
-      this.addModel('mistral', 'Mistral', new THREE.Vector3(-1, 0, 0));
-      this.addModel('gemini', 'Gemini', new THREE.Vector3(3, 0, 0));
-      this.addModel('codellama', 'Code Llama', new THREE.Vector3(7, 0, 0));
+      const models = [
+        { id: 'gpt-4', name: 'Cloud', x: -7 },
+        { id: 'claude', name: 'Barret', x: -3.5 },
+        { id: 'gemini', name: 'Red XIII', x: 0 },
+        { id: 'mistral', name: 'Cid', x: 3.5 },
+        { id: 'llama3', name: 'Tifa', x: 7 }
+      ];
+      
+      models.forEach(m => {
+        this.addModel(m.id, m.name, new THREE.Vector3(m.x, 0, 0));
+      });
     }
   }
   
   addModel(modelId, displayName, position) {
-    const model = new AIModel3D(this.scene, modelId, displayName, position);
+    const character = CHARACTERS[modelId] || { name: displayName, emoji: '🤖' };
+    const model = new AIModel3D(this.scene, modelId, character.name, position, character);
     this.aiModels.push(model);
     return model;
   }
@@ -158,6 +186,112 @@ class DebateRoom {
   removeModel(model) {
     model.remove();
     this.aiModels = this.aiModels.filter(m => m !== model);
+  }
+  
+  startFightSequence() {
+    this.fightState = 'intros';
+    this.fightSequenceTime = 0;
+    
+    this.room.showRound(1);
+    
+    this.aiModels.forEach((model, i) => {
+      setTimeout(() => {
+        model.startIntro();
+      }, 1500 + i * 300);
+    });
+  }
+  
+  scoreResponse(response, question, modelId) {
+    const keywords = this.extractKeywords(question);
+    let score = 0;
+    
+    const responseLower = response.toLowerCase();
+    
+    keywords.forEach(kw => {
+      if (responseLower.includes(kw.toLowerCase())) {
+        score += 10;
+      }
+    });
+    
+    if (response.length > 100) score += 5;
+    if (response.length > 500) score += 10;
+    
+    if (response.includes('.') && response.includes(',')) score += 5;
+    
+    const bonusScores = {
+      'gpt-4': 15,
+      'claude': 12,
+      'gemini': 10,
+      'mistral': 5,
+      'llama3': 5
+    };
+    score += bonusScores[modelId] || 0;
+    
+    return Math.min(score, 100);
+  }
+  
+  extractKeywords(text) {
+    const stopWords = ['the', 'a', 'an', 'is', 'are', 'was', 'were', 'what', 'how', 'why', 'when', 'where', 'who', 'which'];
+    return text.split(' ')
+      .filter(word => word.length > 4 && !stopWords.includes(word.toLowerCase()))
+      .slice(0, 10);
+  }
+  
+  addResponse(modelId, response, question) {
+    this.responses[modelId] = response;
+    
+    const model = this.aiModels.find(m => m.modelId === modelId);
+    if (model) {
+      const score = this.scoreResponse(response, question, modelId);
+      model.addScore(score);
+      model.setThinking(false);
+    }
+  }
+  
+  crownWinner() {
+    const scored = this.aiModels.filter(m => m.health > 0);
+    scored.sort((a, b) => b.score - a.score);
+    
+    if (scored.length > 0) {
+      this.winner = scored[0];
+      scored[0].crown();
+      
+      this.room.showWinner(scored[0].displayName);
+    }
+  }
+  
+  simulateDebateRound(question) {
+    this.aiModels.forEach((model, i) => {
+      model.setThinking(true);
+      
+      setTimeout(() => {
+        const demoResponses = [
+          `As ${model.displayName}, I believe this question requires careful analysis. The key factors involve understanding the context and applying logical reasoning. In conclusion, the best approach balances multiple considerations.`,
+          `This is an interesting challenge. ${model.displayName} here with my perspective: we need to consider both short-term and long-term implications. My recommendation would be to focus on the core fundamentals first.`,
+          `${model.character?.emoji || '🤖'} ${model.displayName} speaking! Here's my take: the answer depends on several variables. Let me break it down systematically and provide actionable insights.`
+        ];
+        
+        const response = demoResponses[i % demoResponses.length];
+        this.addResponse(model.modelId, response, question);
+        model.setSpeaking(true);
+        
+        const target = this.aiModels.filter(m => m !== model)[Math.floor(Math.random() * (this.aiModels.length - 1))];
+        if (target && Math.random() > 0.3) {
+          setTimeout(() => {
+            target.takeDamage(Math.floor(Math.random() * 10) + 5);
+          }, 300);
+        }
+        
+        setTimeout(() => {
+          model.setSpeaking(false);
+        }, 2000);
+        
+      }, 1000 + i * 500);
+    });
+    
+    setTimeout(() => {
+      this.crownWinner();
+    }, 4000);
   }
   
   selectModel(model) {
@@ -201,15 +335,47 @@ class DebateRoom {
   animate() {
     requestAnimationFrame(() => this.animate());
     
+    this.updateFightSequence();
+    
     this.aiModels.forEach(model => model.update());
     this.room.update();
     
     this.renderer.render(this.scene, this.camera);
   }
   
+  updateFightSequence() {
+    this.fightSequenceTime += 0.016;
+    
+    const allIntrosComplete = this.aiModels.every(m => m.introComplete);
+    
+    if (this.fightState === 'intros' && allIntrosComplete) {
+      this.fightState = 'ready';
+      this.aiModels.forEach(m => m.fightState = 'idle');
+    }
+  }
+  
   getModels() {
     return this.aiModels;
   }
+  
+  getWinner() {
+    return this.winner;
+  }
+  
+  getResponses() {
+    return this.responses;
+  }
+  
+  resetForNewRound() {
+    this.responses = {};
+    this.winner = null;
+    this.aiModels.forEach(m => {
+      m.uncrown();
+      m.health = 100;
+      m.updateHealthBar();
+    });
+    this.room.hideAll();
+  }
 }
 
-export { DebateRoom };
+export { DebateRoom, CHARACTERS };
