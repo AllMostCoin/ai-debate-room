@@ -27,10 +27,10 @@ class App {
     const status = document.getElementById('model-status');
     const connection = await aiClient.checkConnection();
     
-    this.cloudMode = connection.provider === 'openai';
+    this.cloudMode = connection.provider === 'openai' || connection.provider === 'groq';
     
     if (connection.connected) {
-      const provider = this.cloudMode ? 'OpenAI' : 'Ollama';
+      const provider = connection.provider === 'groq' ? 'Groq (Free!)' : (this.cloudMode ? 'OpenAI' : 'Ollama');
       const modelCount = Array.isArray(connection.models) ? connection.models.length : 0;
       status.textContent = `Connected to ${provider} (${modelCount} models)`;
       status.style.color = '#4ade80';

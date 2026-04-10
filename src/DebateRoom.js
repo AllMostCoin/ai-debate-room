@@ -34,25 +34,37 @@ class DebateRoom {
   
   setupScene() {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x1a1a2e);
-    this.scene.fog = new THREE.Fog(0x1a1a2e, 10, 50);
+    this.scene.background = new THREE.Color(0x0a0a0a);
+    this.scene.fog = new THREE.FogExp2(0x0a0a0a, 0.015);
   }
   
   setupLighting() {
-    const ambient = new THREE.AmbientLight(0x404060, 0.5);
+    const ambient = new THREE.AmbientLight(0x111111, 0.3);
     this.scene.add(ambient);
     
-    const mainLight = new THREE.PointLight(0xffffff, 1, 100);
-    mainLight.position.set(0, 8, 0);
+    const mainLight = new THREE.PointLight(0xe94560, 1.5, 50);
+    mainLight.position.set(0, 15, 0);
     this.scene.add(mainLight);
     
-    const accentLight1 = new THREE.PointLight(0xe94560, 0.5, 30);
-    accentLight1.position.set(-5, 3, 5);
+    const accentLight1 = new THREE.PointLight(0xe94560, 2, 20);
+    accentLight1.position.set(-10, 5, 5);
     this.scene.add(accentLight1);
     
-    const accentLight2 = new THREE.PointLight(0x0f3460, 0.5, 30);
-    accentLight2.position.set(5, 3, -5);
+    const accentLight2 = new THREE.PointLight(0x00ffff, 1.5, 20);
+    accentLight2.position.set(10, 5, -5);
     this.scene.add(accentLight2);
+    
+    const bottomLight1 = new THREE.PointLight(0xe94560, 1, 15);
+    bottomLight1.position.set(0, 0.5, 0);
+    this.scene.add(bottomLight1);
+    
+    const bottomLight2 = new THREE.PointLight(0x00ffff, 0.5, 15);
+    bottomLight2.position.set(-5, 0.5, 5);
+    this.scene.add(bottomLight2);
+    
+    const bottomLight3 = new THREE.PointLight(0x00ffff, 0.5, 15);
+    bottomLight3.position.set(5, 0.5, -5);
+    this.scene.add(bottomLight3);
   }
   
   setupCamera() {
@@ -62,8 +74,8 @@ class DebateRoom {
       0.1,
       1000
     );
-    this.camera.position.set(0, 4, 12);
-    this.camera.lookAt(0, 1, 0);
+    this.camera.position.set(0, 8, 20);
+    this.camera.lookAt(0, 2, 0);
   }
   
   setupRenderer() {
@@ -99,7 +111,7 @@ class DebateRoom {
       pos.x = x;
       pos.z = z;
       
-      pos.y = Math.max(2, Math.min(10, pos.y - phi));
+      pos.y = Math.max(3, Math.min(20, pos.y - phi));
       
       this.previousMousePosition = { x: e.clientX, y: e.clientY };
     });
@@ -116,8 +128,9 @@ class DebateRoom {
       const distance = this.camera.position.length();
       const newDistance = distance + e.deltaY * zoomSpeed * 0.01;
       
-      if (newDistance > 5 && newDistance < 30) {
+      if (newDistance > 8 && newDistance < 50) {
         this.camera.position.multiplyScalar(newDistance / distance);
+      this.camera.position.y = Math.max(3, Math.min(20, this.camera.position.y));
       }
     });
   }
@@ -125,13 +138,14 @@ class DebateRoom {
   addDefaultModels() {
     const useGroq = import.meta.env.VITE_USE_GROQ === 'true';
     if (useGroq) {
-      this.addModel('llama-3.1-8b-instant', 'Llama 3.1', new THREE.Vector3(-4, 0, 0));
-      this.addModel('llama-3.3-70b-versatile', 'Llama 3.3', new THREE.Vector3(0, 0, 0));
-      this.addModel('llama-3.1-8b-instant', 'Llama 3.1b', new THREE.Vector3(4, 0, 0));
+      this.addModel('llama-3.1-8b-instant', 'Llama 3.1', new THREE.Vector3(-6, 0, 0));
+      this.addModel('llama-3.3-70b-versatile', 'Llama 3.3', new THREE.Vector3(-2, 0, 0));
+      this.addModel('llama-3.1-8b-instant', 'Llama 3.1b', new THREE.Vector3(2, 0, 0));
     } else {
-      this.addModel('llama3', 'LLama 3', new THREE.Vector3(-3, 0, 0));
-      this.addModel('mistral', 'Mistral', new THREE.Vector3(0, 0, 0));
-      this.addModel('codellama', 'Code Llama', new THREE.Vector3(3, 0, 0));
+      this.addModel('llama3', 'Llama 3', new THREE.Vector3(-5, 0, 0));
+      this.addModel('mistral', 'Mistral', new THREE.Vector3(-1, 0, 0));
+      this.addModel('gemini', 'Gemini', new THREE.Vector3(3, 0, 0));
+      this.addModel('codellama', 'Code Llama', new THREE.Vector3(7, 0, 0));
     }
   }
   

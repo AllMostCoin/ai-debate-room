@@ -7,6 +7,8 @@ const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || '';
 const USE_GROQ = import.meta.env.VITE_USE_GROQ === 'true';
 const USE_CLOUD = import.meta.env.VITE_USE_CLOUD === 'true';
 
+console.log('DEBUG ENV:', { OPENAI_API_KEY: !!OPENAI_API_KEY, GROQ_API_KEY: !!GROQ_API_KEY, USE_GROQ, USE_CLOUD });
+
 class AIClient {
   constructor() {
     this.ollama = ollamaClient;
