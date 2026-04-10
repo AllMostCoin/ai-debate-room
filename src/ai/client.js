@@ -19,7 +19,7 @@ class AIClient {
 
   async checkConnection() {
     if (this.useGroq) {
-      return { connected: true, provider: 'groq', models: ['llama-3.1-8b-instant', 'llama-3.2-3b-preview', 'mixtral-8x7b-32768', 'gemma2-9b-it'] };
+      return await this.groq.checkConnection();
     }
     if (this.useOpenAI) {
       return { connected: true, provider: 'openai', models: ['gpt-4o-mini', 'gpt-4o', 'gpt-3.5-turbo'] };
@@ -29,12 +29,7 @@ class AIClient {
 
   async listModels() {
     if (this.useGroq) {
-      return [
-        { name: 'llama-3.1-8b-instant', description: 'Fast, free, accurate' },
-        { name: 'llama-3.2-3b-preview', description: 'Compact, efficient' },
-        { name: 'mixtral-8x7b-32768', description: 'Large, powerful' },
-        { name: 'gemma2-9b-it', description: 'Google\'s model' }
-      ];
+      return await this.groq.listModels();
     }
     if (this.useOpenAI) {
       return [

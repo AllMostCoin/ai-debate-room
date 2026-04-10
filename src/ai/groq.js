@@ -9,16 +9,15 @@ class GroqClient {
     if (!this.apiKey) {
       return { connected: false, error: 'No API key' };
     }
-    return { connected: true, provider: 'groq', models: ['llama-3.1-8b-instant', 'llama-3.2-3b-preview', 'mixtral-8x7b-32768', 'gemma2-9b-it'] };
+    return { connected: true, provider: 'groq', models: ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile', 'qwen-2.5-32b-instruct'] };
   }
 
   async listModels() {
     if (!this.apiKey) return [];
     return [
-      { name: 'llama-3.1-8b-instant', description: 'Fast, free, accurate' },
-      { name: 'llama-3.2-3b-preview', description: 'Compact, efficient' },
-      { name: 'mixtral-8x7b-32768', description: 'Large, powerful' },
-      { name: 'gemma2-9b-it', description: 'Google\'s model' }
+      { name: 'llama-3.1-8b-instant', description: 'Fast, free' },
+      { name: 'llama-3.3-70b-versatile', description: 'Large, powerful' },
+      { name: 'qwen-2.5-32b-instruct', description: 'Fast, multilingual' }
     ];
   }
 
