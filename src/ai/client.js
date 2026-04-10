@@ -1,13 +1,11 @@
 import { ollamaClient } from './ollama.js';
-import { groqClient } from './groq.js';
+import { groqClient, PERSONAS } from './groq.js';
 import { speechSynth } from './speech.js';
 
 const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || '';
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || '';
 const USE_GROQ = import.meta.env.VITE_USE_GROQ === 'true';
 const USE_CLOUD = import.meta.env.VITE_USE_CLOUD === 'true';
-
-console.log('DEBUG ENV:', { OPENAI_API_KEY: !!OPENAI_API_KEY, GROQ_API_KEY: !!GROQ_API_KEY, USE_GROQ, USE_CLOUD });
 
 class AIClient {
   constructor() {
@@ -53,6 +51,59 @@ class AIClient {
     return await this.ollama.chat(model, messages, options);
   }
 
+  async chatWithPersona(modelKey, persona, question, onChunk) {
+    const personaData = PERSONAS[persona] || PERSONAS.scientist;
+    const systemPrompt = personaData.persona;
+    
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: question }
+    ];
+
+    if (this.useGroq) {
+      const result = await this.groq.chatStreaming(modelKey, messages);
+      
+      if (result.success && result.stream) {
+        const reader = result.stream.getReader();
+        const decoder = new TextDecoder();
+        let fullResponse = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              if (data === '[DONE]') continue;
+              
+              try {
+                const parsed = JSON.parse(data);
+                const content = parsed.choices?.[0]?.delta?.content || '';
+                if (content) {
+                  fullResponse += content;
+                  if (onChunk) onChunk(content, fullResponse);
+                }
+              } catch (e) {}
+            }
+          }
+        }
+
+        return { success: true, response: fullResponse };
+      }
+      return result;
+    }
+
+    const result = await this.chat(modelKey, messages);
+    if (result.success && onChunk) {
+      onChunk(result.response, result.response);
+    }
+    return result;
+  }
+
   async chatOpenAI(model, messages, options = {}) {
     try {
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -78,10 +129,6 @@ class AIClient {
     } catch (error) {
       return { success: false, error: error.message };
     }
-  }
-
-  async chatOllama(model, messages, options = {}) {
-    return await this.ollama.chat(model, messages, options);
   }
 
   async analyzeResponse(model, originalQuestion, responses) {
@@ -116,6 +163,14 @@ Provide an improved answer:`;
 
     return await this.chat(model, [{ role: 'user', content: prompt }]);
   }
+
+  async scoreResponse(question, answer) {
+    if (this.useGroq) {
+      return await this.groq.scoreResponse(question, answer);
+    }
+    return null;
+  }
 }
 
 export const aiClient = new AIClient();
+export { PERSONAS };

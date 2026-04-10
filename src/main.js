@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { DebateRoom } from './DebateRoom.js';
-import { aiClient } from './ai/client.js';
+import { aiClient, PERSONAS } from './ai/client.js';
 import { speechSynth } from './ai/speech.js';
 import { debateManager } from './ai/debate.js';
 
@@ -10,6 +10,8 @@ class App {
     this.speechEnabled = false;
     this.selectedModels = [];
     this.cloudMode = false;
+    this.debateHistory = [];
+    this.currentDebate = [];
     
     this.init();
   }
@@ -18,6 +20,7 @@ class App {
     await this.checkConnection();
     this.setupEventListeners();
     this.populateModelSelector();
+    this.populatePersonaSelector();
     
     debateManager.setModels(this.debateRoom.getModels());
     debateManager.setUpdateCallback((entry) => this.handleDebateUpdate(entry));
@@ -46,6 +49,7 @@ class App {
     const voiceToggle = document.getElementById('voice-toggle');
     const startDebateBtn = document.getElementById('start-debate-btn');
     const addModelBtn = document.getElementById('add-model-btn');
+    const saveDebateBtn = document.getElementById('save-debate-btn');
     
     sendBtn.addEventListener('click', () => this.handleSend());
     questionInput.addEventListener('keypress', (e) => {
@@ -59,6 +63,10 @@ class App {
     
     startDebateBtn.addEventListener('click', () => this.handleStartDebate());
     addModelBtn.addEventListener('click', () => this.showAddModelDialog());
+    
+    if (saveDebateBtn) {
+      saveDebateBtn.addEventListener('click', () => this.saveDebate());
+    }
   }
   
   populateModelSelector() {
@@ -69,6 +77,7 @@ class App {
       const tag = document.createElement('div');
       tag.className = 'model-tag';
       tag.innerHTML = `
+        <span class="model-icon">${this.getModelIcon(model.displayName)}</span>
         ${model.displayName}
         <span class="remove" data-model-id="${model.modelId}">×</span>
       `;
@@ -78,6 +87,31 @@ class App {
       });
       modelList.appendChild(tag);
     });
+  }
+  
+  populatePersonaSelector() {
+    const personaSelector = document.getElementById('persona-selector');
+    if (!personaSelector) return;
+    
+    personaSelector.innerHTML = '';
+    Object.entries(PERSONAS).forEach(([key, persona]) => {
+      const option = document.createElement('button');
+      option.className = 'persona-btn';
+      option.innerHTML = `${persona.icon} ${persona.name}`;
+      option.style.setProperty('--persona-color', persona.color);
+      option.dataset.persona = key;
+      option.addEventListener('click', () => this.selectPersona(key));
+      personaSelector.appendChild(option);
+    });
+  }
+  
+  getModelIcon(name) {
+    const lowerName = name.toLowerCase();
+    if (lowerName.includes('llama')) return '🦙';
+    if (lowerName.includes('gpt')) return '🤖';
+    if (lowerName.includes('claude')) return '🧠';
+    if (lowerName.includes('gemini')) return '✨';
+    return '🎯';
   }
   
   async showAddModelDialog() {
@@ -124,37 +158,164 @@ class App {
     
     input.value = '';
     this.addMessage(question, 'question');
+    this.currentDebate.push({ role: 'user', content: question, timestamp: Date.now() });
     
     const models = this.debateRoom.getModels();
     
     for (const model of models) {
       model.setThinking(true);
-      this.addMessage(`Waiting for ${model.displayName}...`, 'thinking');
-      const thinkingIndex = document.querySelectorAll('.message.thinking').length - 1;
+      const thinkingMsg = this.addMessage(`${this.getModelIcon(model.displayName)} ${model.displayName} is thinking...`, 'thinking');
+      const thinkingId = thinkingMsg.dataset.id;
       
-      const result = await aiClient.chat(model.modelId, [
-        { role: 'user', content: question }
-      ]);
+      let fullResponse = '';
       
-      model.setThinking(false);
-      
-      const thinkingMsg = document.querySelectorAll('.message.thinking')[thinkingIndex];
-      if (thinkingMsg) thinkingMsg.remove();
-      
-      if (result.success) {
-        this.addMessage(result.response, 'answer', model.displayName);
+      if (this.cloudMode) {
+        const result = await aiClient.chatWithPersona(
+          model.modelId,
+          this.selectedPersona || 'scientist',
+          question,
+          (chunk, full) => {
+            fullResponse = full;
+            this.updateStreamingMessage(thinkingId, `${this.getModelIcon(model.displayName)} ${model.displayName}: ${full}...`);
+          }
+        );
         
-        if (this.speechEnabled) {
-          model.setSpeaking(true);
-          speechSynth.speak(
-            `${model.displayName} says: ${result.response}`,
-            () => model.setSpeaking(true),
-            () => model.setSpeaking(false)
-          );
+        model.setThinking(false);
+        
+        if (thinkingMsg) thinkingMsg.remove();
+        
+        if (result.success) {
+          const answerCard = this.addAnswerCard(model, result.response);
+          this.currentDebate.push({ role: 'assistant', model: model.displayName, content: result.response, timestamp: Date.now() });
+          
+          if (this.speechEnabled) {
+            model.setSpeaking(true);
+            speechSynth.speak(`${model.displayName} says: ${result.response}`, () => {}, () => model.setSpeaking(false));
+          }
+        } else {
+          this.addMessage(`Error: ${result.error}`, 'error', model.displayName);
         }
       } else {
-        this.addMessage(`Error: ${result.error}`, 'error', model.displayName);
+        const result = await aiClient.chat(model.modelId, [{ role: 'user', content: question }]);
+        
+        model.setThinking(false);
+        if (thinkingMsg) thinkingMsg.remove();
+        
+        if (result.success) {
+          this.addAnswerCard(model, result.response);
+        } else {
+          this.addMessage(`Error: ${result.error}`, 'error', model.displayName);
+        }
       }
+    }
+  }
+  
+  addMessage(text, type, modelName = null) {
+    const messages = document.getElementById('chat-messages');
+    const message = document.createElement('div');
+    message.className = `message ${type}`;
+    message.dataset.id = `msg-${Date.now()}-${Math.random()}`;
+    
+    if (type === 'question') {
+      message.innerHTML = `<span class="you-icon">👤</span> <span class="question-text">${text}</span>`;
+    } else if (modelName) {
+      message.innerHTML = `<div class="model-name">${modelName}</div><div class="answer-text">${text}</div>`;
+    } else {
+      message.innerHTML = text;
+    }
+    
+    messages.appendChild(message);
+    messages.scrollTop = messages.scrollHeight;
+    return message;
+  }
+  
+  updateStreamingMessage(id, text) {
+    const msg = document.querySelector(`[data-id="${id}"]`);
+    if (msg) {
+      msg.innerHTML = `<span class="streaming-text">${text}</span><span class="cursor">▊</span>`;
+    }
+  }
+  
+  addAnswerCard(model, response) {
+    const messages = document.getElementById('chat-messages');
+    const card = document.createElement('div');
+    card.className = 'answer-card';
+    card.innerHTML = `
+      <div class="card-header">
+        <span class="model-icon">${this.getModelIcon(model.displayName)}</span>
+        <span class="model-name">${model.displayName}</span>
+        <button class="score-btn" onclick="app.scoreAnswer(this)">⭐ Score</button>
+      </div>
+      <div class="card-body">${response}</div>
+      <div class="card-footer">
+        <button class="action-btn" onclick="app.copyAnswer(this)">📋 Copy</button>
+        <button class="action-btn" onclick="app.regenerateAnswer(this, '${model.modelId}')">🔄 Retry</button>
+      </div>
+    `;
+    messages.appendChild(card);
+    messages.scrollTop = messages.scrollHeight;
+    return card;
+  }
+  
+  async scoreAnswer(btn) {
+    const card = btn.closest('.answer-card');
+    const body = card.querySelector('.card-body');
+    const response = body.textContent;
+    const question = this.currentDebate.find(m => m.role === 'user')?.content || 'General question';
+    
+    btn.textContent = '⏳ Scoring...';
+    btn.disabled = true;
+    
+    const score = await aiClient.scoreResponse(question, response);
+    
+    btn.disabled = false;
+    
+    if (score) {
+      const scoreCard = document.createElement('div');
+      scoreCard.className = 'score-card';
+      scoreCard.innerHTML = `
+        <div class="score-header">📊 Score: ${score.score}/10</div>
+        <div class="score-stats">
+          <span>Clarity: ${score.clarity}/10</span>
+          <span>Evidence: ${score.evidence}/10</span>
+          <span>Reasoning: ${score.reasoning}/10</span>
+        </div>
+        <div class="score-feedback">${score.feedback}</div>
+      `;
+      card.appendChild(scoreCard);
+    } else {
+      btn.textContent = '⭐ Score (Failed)';
+    }
+  }
+  
+  copyAnswer(btn) {
+    const card = btn.closest('.answer-card');
+    const body = card.querySelector('.card-body');
+    navigator.clipboard.writeText(body.textContent);
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => btn.textContent = '📋 Copy', 2000);
+  }
+  
+  async regenerateAnswer(btn, modelId) {
+    const card = btn.closest('.answer-card');
+    const body = card.querySelector('.card-body');
+    const question = this.currentDebate.find(m => m.role === 'user')?.content;
+    
+    if (!question) return;
+    
+    btn.textContent = '⏳...';
+    btn.disabled = true;
+    body.innerHTML = 'Generating...';
+    
+    const result = await aiClient.chat(modelId, [{ role: 'user', content: question }]);
+    
+    btn.disabled = false;
+    btn.textContent = '🔄 Retry';
+    
+    if (result.success) {
+      body.innerHTML = result.response;
+    } else {
+      body.innerHTML = `Error: ${result.error}`;
     }
   }
   
@@ -162,7 +323,9 @@ class App {
     const input = document.getElementById('question-input');
     const question = input.value.trim() || 'What is the meaning of life?';
     
-    this.addMessage(`Starting debate: ${question}`, 'debate');
+    this.currentDebate = [];
+    this.addMessage(`⚔️ Starting debate: ${question}`, 'debate-start');
+    this.debateHistory.push({ question, timestamp: Date.now() });
     
     await debateManager.startDebate(question);
   }
@@ -174,10 +337,10 @@ class App {
           entry.model?.setThinking(true);
           break;
         case 'DEBATE_STARTED':
-          this.addMessage('Debate has started!', 'debate');
+          this.addMessage('⚔️ Debate has started!', 'debate');
           break;
         case 'DEBATE_ROUND':
-          this.addMessage(`Round ${entry.round} begins`, 'round');
+          this.addMessage(`📢 Round ${entry.round} begins`, 'round');
           break;
         case 'DEBATE_WINNER':
           if (entry.winner) {
@@ -187,6 +350,8 @@ class App {
       }
     } else if (entry.type === 'answer') {
       this.addMessage(entry.data, 'answer', 'System');
+    } else if (entry.type === 'error') {
+      this.addMessage(`❌ ${entry.message}`, 'error');
     }
     
     this.updateDebateLog(entry);
@@ -204,22 +369,23 @@ class App {
     debateLog.scrollTop = debateLog.scrollHeight;
   }
   
-  addMessage(text, type, modelName = null) {
-    const messages = document.getElementById('chat-messages');
-    const message = document.createElement('div');
-    message.className = `message ${type}`;
+  saveDebate() {
+    const debateText = this.currentDebate.map(m => {
+      if (m.role === 'user') return `👤 You: ${m.content}`;
+      return `${m.model || 'AI'}: ${m.content}`;
+    }).join('\n\n');
     
-    if (modelName) {
-      message.innerHTML = `<div class="model-name">${modelName}</div><div class="answer-text">${text}</div>`;
-    } else {
-      message.textContent = text;
-    }
-    
-    messages.appendChild(message);
-    messages.scrollTop = messages.scrollHeight;
+    const blob = new Blob([debateText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `debate-${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 }
 
+window.App = App;
 window.addEventListener('DOMContentLoaded', () => {
-  new App();
+  window.app = new App();
 });
