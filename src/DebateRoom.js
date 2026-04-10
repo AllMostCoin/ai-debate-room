@@ -125,9 +125,9 @@ class DebateRoom {
   addDefaultModels() {
     const useGroq = import.meta.env.VITE_USE_GROQ === 'true';
     if (useGroq) {
-      this.addModel('llama-3.1-8b-instant', 'Llama 3.1', new THREE.Vector3(-3, 0, 0));
-      this.addModel('llama-3.2-3b-preview', 'Llama 3.2', new THREE.Vector3(0, 0, 0));
-      this.addModel('llama-3.3-70b-versatile', 'Llama 3.3', new THREE.Vector3(3, 0, 0));
+      this.addModel('llama-3.1-8b-instant', 'Llama 3.1', new THREE.Vector3(-4, 0, 0));
+      this.addModel('llama-3.3-70b-versatile', 'Llama 3.3', new THREE.Vector3(0, 0, 0));
+      this.addModel('qwen-2.5-32b-instruct', 'Qwen 2.5', new THREE.Vector3(4, 0, 0));
     } else {
       this.addModel('llama3', 'LLama 3', new THREE.Vector3(-3, 0, 0));
       this.addModel('mistral', 'Mistral', new THREE.Vector3(0, 0, 0));
